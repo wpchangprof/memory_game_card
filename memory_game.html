@@ -1,0 +1,414 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>雙人撲克牌記憶對配遊戲</title>
+    <style>
+        body {
+            font-family: 'Helvetica Neue', Arial, sans-serif;
+            background-color: #f0f2f5;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 20px;
+            margin: 0;
+        }
+
+        h1 {
+            color: #333;
+            margin-bottom: 10px;
+        }
+
+        /* 遊戲設定區 */
+        #setup-container {
+            background: white;
+            padding: 25px;
+            border-radius: 8px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            text-align: center;
+            margin-bottom: 20px;
+            width: 300px;
+        }
+
+        .form-group {
+            margin-bottom: 15px;
+            text-align: left;
+        }
+
+        label {
+            display: block;
+            font-weight: bold;
+            margin-bottom: 5px;
+            color: #555;
+        }
+
+        input, select {
+            width: 100%;
+            padding: 10px;
+            font-size: 16px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            box-sizing: border-box;
+        }
+
+        button {
+            width: 100%;
+            padding: 12px;
+            font-size: 18px;
+            background-color: #007bff;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            margin-top: 10px;
+            font-weight: bold;
+        }
+
+        button:hover {
+            background-color: #0056b3;
+        }
+
+        /* 遊戲計分板 (大字體) */
+        #scoreboard {
+            display: none;
+            justify-content: space-around;
+            width: 100%;
+            max-width: 600px;
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+            font-size: 28px;
+            font-weight: bold;
+        }
+
+        .player-score {
+            padding: 10px 25px;
+            border-radius: 6px;
+            transition: all 0.3s ease;
+        }
+
+        .active-turn {
+            background-color: #d4edda;
+            color: #155724;
+            border: 3px solid #c3e6cb;
+            transform: scale(1.05);
+        }
+
+        /* 遊戲卡牌區 */
+        #game-board {
+            display: none;
+            grid-template-columns: repeat(5, 1fr); /* 預設，JS會動態修改 */
+            gap: 12px;
+            max-width: 95vw;
+            width: 100%;
+        }
+
+        .card {
+            height: 110px;
+            background-color: #2b5797;
+            border-radius: 5px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-size: 24px;
+            font-weight: bold;
+            color: transparent;
+            cursor: pointer;
+            user-select: none;
+            transition: transform 0.3s;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+            text-align: center;
+        }
+
+        /* 修正鏡像問題 */
+        .card.flipped {
+            background-color: white;
+            transform: rotateY(180deg);
+        }
+
+        .card.flipped .card-content {
+            transform: rotateY(180deg);
+        }
+
+        /* 紅色花色 */
+        .card.red {
+            color: #e51c23;
+        }
+
+        /* 黑色花色 */
+        .card.black {
+            color: #000000;
+        }
+
+        /* 配對成功隱藏 */
+        .card.matched {
+            background-color: #e0e0e0;
+            color: #aaa;
+            cursor: default;
+            visibility: hidden;
+        }
+    </style>
+</head>
+<body>
+
+    <h1>妞寶_撲克牌記憶對配遊戲</h1>
+
+    <div id="setup-container">
+        <h3>遊戲設定</h3>
+        <div class="form-group">
+            <label for="p1-input">玩家 1 名字</label>
+            <input type="text" id="p1-input" value="玩家 1">
+        </div>
+        <div class="form-group">
+            <label for="p2-input">玩家 2 名字</label>
+            <input type="text" id="p2-input" value="玩家 2">
+        </div>
+        <div class="form-group">
+            <label for="card-count">選擇卡牌張數 (必須為偶數)</label>
+            <select id="card-count">
+                <option value="4">4 張牌 (極簡易 - 2對)</option>
+                <option value="12">12 張牌 (簡易 - 6對)</option>
+                <option value="20" selected>20 張牌 (標準 - 10對)</option>
+                <option value="30">30 張牌 (中等 - 15對)</option>
+                <option value="40">40 張牌 (困難 - 20對)</option>
+                <option value="52">52 張牌 (地獄完整版 - 26對)</option>
+            </select>
+        </div>
+        <button onclick="startGame()">開始遊戲</button>
+    </div>
+
+    <div id="scoreboard">
+        <div id="p1-display" class="player-score">玩家 1: 0 分</div>
+        <div id="p2-display" class="player-score">玩家 2: 0 分</div>
+    </div>
+
+    <div id="game-board"></div>
+
+    <script>
+        let players = [
+            { name: "玩家 1", score: 0 },
+            { name: "玩家 2", score: 0 }
+        ];
+        let currentTurn = 0; 
+        let flippedCards = [];
+        let lockBoard = false;
+        let matchedPairs = 0;
+        let totalPairs = 10; // 總對數，由玩家選擇決定
+        let deck = [];
+
+        // 完整的 52 張牌組資料庫 (花色與數字)
+        const allSuits = [
+            { suit: '♥', color: 'red' },
+            { suit: '♦', color: 'red' },
+            { suit: '♠', color: 'black' },
+            { suit: '♣', color: 'black' }
+        ];
+        const allValues = ['A', '2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K'];
+
+        // 根據玩家選擇的張數，生成成對的牌組
+        function generateDeck(count) {
+            let tempDeck = [];
+            totalPairs = count / 2;
+
+            // 建立完整的 52 張牌
+            let fullDeck = [];
+            allValues.forEach(val => {
+                allSuits.forEach(s => {
+                    fullDeck.push({ value: val, suit: s.suit, color: s.color });
+                });
+            });
+
+            // 為了確保一定能配對成功，我們先選出需要的「對數」
+            // 每次抽兩張相同數字、不同花色的牌納入遊戲
+            let pairCount = 0;
+            for (let i = 0; i < allValues.length; i++) {
+                if (pairCount >= totalPairs) break;
+                
+                let val = allValues[i];
+                // 找出該數字的所有花色
+                let currentCards = fullDeck.filter(c => c.value === val);
+                
+                // 根據需要放入成對的牌 (最少2張，最多4張)
+                if (totalPairs - pairCount >= 2 && currentCards.length === 4) {
+                    tempDeck.push(...currentCards); // 4張全放 (等於2對)
+                    pairCount += 2;
+                } else {
+                    tempDeck.push(currentCards[0], currentCards[2]); // 放2張 (1對，一紅一黑)
+                    pairCount += 1;
+                }
+            }
+
+            // 如果因為不整除或其他原因少牌（通常不會），做個安全防護截取
+            return tempDeck.slice(0, count);
+        }
+
+        // 洗牌演算法
+        function shuffle(array) {
+            for (let i = array.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [array[i], array[j]] = [array[j], array[i]];
+            }
+        }
+
+        // 動態調整排版：根據張數決定網頁上一行顯示幾張牌
+        function adjustGridColumns(count) {
+            const board = document.getElementById('game-board');
+            if (count <= 4) {
+                board.style.gridTemplateColumns = "repeat(2, 1fr)";
+                board.style.maxWidth = "260px";
+            } else if (count <= 12) {
+                board.style.gridTemplateColumns = "repeat(4, 1fr)";
+                board.style.maxWidth = "500px";
+            } else if (count <= 20) {
+                board.style.gridTemplateColumns = "repeat(5, 1fr)";
+                board.style.maxWidth = "650px";
+            } else if (count <= 30) {
+                board.style.gridTemplateColumns = "repeat(6, 1fr)";
+                board.style.maxWidth = "780px";
+            } else { // 40張 或 52張
+                board.style.gridTemplateColumns = "repeat(13, 1fr)";
+                board.style.maxWidth = "1400px";
+            }
+        }
+
+        // 開始遊戲
+        function startGame() {
+            players[0].name = document.getElementById('p1-input').value || "玩家 1";
+            players[1].name = document.getElementById('p2-input').value || "玩家 2";
+            let cardCount = parseInt(document.getElementById('card-count').value);
+
+            // 初始化數據
+            players[0].score = 0;
+            players[1].score = 0;
+            matchedPairs = 0;
+            currentTurn = 0;
+
+            // 生成並打亂牌組
+            deck = generateDeck(cardCount);
+            shuffle(deck);
+
+            // 調整介面
+            document.getElementById('setup-container').style.display = 'none';
+            document.getElementById('scoreboard').style.display = 'flex';
+            document.getElementById('game-board').style.display = 'grid';
+
+            adjustGridColumns(cardCount);
+            updateScoreboard();
+            initializeBoard();
+        }
+
+        // 更新計分板
+        function updateScoreboard() {
+            const p1Display = document.getElementById('p1-display');
+            const p2Display = document.getElementById('p2-display');
+
+            p1Display.innerText = `${players[0].name}: ${players[0].score} 分`;
+            p2Display.innerText = `${players[1].name}: ${players[1].score} 分`;
+
+            if (currentTurn === 0) {
+                p1Display.classList.add('active-turn');
+                p2Display.classList.remove('active-turn');
+            } else {
+                p2Display.classList.add('active-turn');
+                p1Display.classList.remove('active-turn');
+            }
+        }
+
+        // 初始化遊戲盤面
+        function initializeBoard() {
+            const board = document.getElementById('game-board');
+            board.innerHTML = ""; // 清空上一次的殘留卡牌
+
+            deck.forEach((cardInfo, index) => {
+                const cardElement = document.createElement('div');
+                cardElement.classList.add('card');
+                cardElement.dataset.value = cardInfo.value;
+                
+                // 內層文字容器 (修正翻轉鏡像)
+                const contentElement = document.createElement('div');
+                contentElement.classList.add('card-content');
+                contentElement.innerHTML = `${cardInfo.value}<br>${cardInfo.suit}`;
+                cardElement.appendChild(contentElement);
+                
+                cardElement.addEventListener('click', () => flipCard(cardElement, cardInfo));
+                board.appendChild(cardElement);
+            });
+        }
+
+        // 翻牌邏輯
+        function flipCard(cardElement, cardInfo) {
+            if (lockBoard) return;
+            if (cardElement.classList.contains('flipped') || cardElement.classList.contains('matched')) return;
+
+            cardElement.classList.add('flipped', cardInfo.color);
+            flippedCards.push({ element: cardElement, info: cardInfo });
+
+            if (flippedCards.length === 2) {
+                checkMatch();
+            }
+        }
+
+        // 檢查是否配對成功
+        function checkMatch() {
+            lockBoard = true;
+            const [card1, card2] = flippedCards;
+
+            // 只要數字相同即算配對成功
+            if (card1.info.value === card2.info.value) {
+                setTimeout(() => {
+                    card1.element.classList.add('matched');
+                    card2.element.classList.add('matched');
+                    
+                    players[currentTurn].score++;
+                    matchedPairs++;
+
+                    updateScoreboard();
+                    resetTurn();
+
+                    if (matchedPairs === totalPairs) {
+                        endGame();
+                    }
+                }, 500);
+            } else {
+                setTimeout(() => {
+                    card1.element.classList.remove('flipped', card1.info.color);
+                    card2.element.classList.remove('flipped', card2.info.color);
+                    
+                    // 換下一位玩家
+                    currentTurn = currentTurn === 0 ? 1 : 0;
+                    
+                    updateScoreboard();
+                    resetTurn();
+                }, 1000);
+            }
+        }
+
+        function resetTurn() {
+            flippedCards = [];
+            lockBoard = false;
+        }
+
+        // 遊戲結束統計
+        function endGame() {
+            let winnerText = "";
+            if (players[0].score > players[1].score) {
+                winnerText = `👑 贏家是：${players[0].name}！`;
+            } else if (players[1].score > players[0].score) {
+                winnerText = `👑 贏家是：${players[1].name}！`;
+            } else {
+                winnerText = "平手！兩位都是記憶大師！";
+            }
+
+            alert(`遊戲結束！\n\n${players[0].name}: ${players[0].score} 分\n${players[1].name}: ${players[1].score} 分\n\n${winnerText}`);
+            
+            // 重新顯示設定畫面，方便開下一局
+            document.getElementById('setup-container').style.display = 'block';
+            document.getElementById('scoreboard').style.display = 'none';
+            document.getElementById('game-board').style.display = 'none';
+        }
+    </script>
+</body>
+</html>
